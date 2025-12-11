@@ -1,103 +1,283 @@
-import { Product, WebhookConfig, ApiKeyConfig, IntegrationApp } from "../types";
 
-// SIMBA CLOUD SIMULATOR
-// This service mimics a backend API and Database.
+import { Product, WebhookConfig, ApiKeyConfig, IntegrationApp, Course } from "../types";
 
-const DB_KEY_PRODUCTS = 'simba_products_clean_v1';
-const DB_KEY_WEBHOOKS = 'simba_webhooks_v1';
-const DB_KEY_API_KEYS = 'simba_api_keys_v1';
-const DB_KEY_INTEGRATIONS = 'simba_integrations_v1';
+// SIMBA CLOUD DATABASE (IndexedDB Implementation)
+const DB_NAME = 'SimbaCloudDB';
+const DB_VERSION = 2; // Incremented version for new store
+
+// Load user from storage on init
+let CURRENT_USER_ID = localStorage.getItem('simba_user_id') || '';
+
+// --- UTILS INDEXEDDB ---
+const openDB = (): Promise<IDBDatabase> => {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+        request.onupgradeneeded = (event: any) => {
+            const db = event.target.result;
+            // Stores para dados
+            if (!db.objectStoreNames.contains('products')) {
+                db.createObjectStore('products', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('courses')) { // New Store
+                db.createObjectStore('courses', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('webhooks')) {
+                db.createObjectStore('webhooks', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('api_keys')) {
+                db.createObjectStore('api_keys', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('integrations')) {
+                db.createObjectStore('integrations'); 
+            }
+        };
+
+        request.onsuccess = (event: any) => {
+            resolve(event.target.result);
+        };
+
+        request.onerror = (event: any) => {
+            console.error("Erro ao abrir Banco de Dados Local:", event.target.error);
+            reject(event.target.error);
+        };
+    });
+};
+
+const dbOp = async (storeName: string, mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest | void): Promise<any> => {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(storeName, mode);
+        const store = transaction.objectStore(storeName);
+        
+        let request;
+        try {
+            request = operation(store);
+        } catch (e) {
+            reject(e);
+            return;
+        }
+
+        if (request) {
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        } else {
+             transaction.oncomplete = () => resolve(true);
+             transaction.onerror = () => reject(transaction.error);
+        }
+    });
+};
 
 export const SimbaCloud = {
-  // Simulate uploading a file to a CDN (S3/Cloud Storage)
-  uploadImage: async (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        // In a real app, this would return a https://s3.amazonaws.com/... URL
-        // Here we return the base64 string to simulate it working in the browser
-        resolve(reader.result as string);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  // --- AUTH CONTEXT ---
+  setUserId: (userId: string) => {
+      CURRENT_USER_ID = userId;
+      // Persist login
+      localStorage.setItem('simba_user_id', userId);
   },
 
-  // --- PRODUCTS ---
-  saveProduct: async (product: Product): Promise<Product> => {
-    // Simulate network delay
-    await new Promise(r => setTimeout(r, 800));
+  getCurrentUserId: () => {
+      return localStorage.getItem('simba_user_id');
+  },
 
-    const existingData = localStorage.getItem(DB_KEY_PRODUCTS);
-    const products: Product[] = existingData ? JSON.parse(existingData) : [];
-    
-    // Generate unique Links
-    const checkoutId = Math.random().toString(36).substring(7);
-    const updatedProduct = {
-      ...product,
-      links: {
-        checkout: `https://simba.app/pay/${checkoutId}`,
-        salesPage: product.salesPageUrl || `https://simba.app/p/${product.id}`
+  logout: () => {
+      CURRENT_USER_ID = '';
+      localStorage.removeItem('simba_user_id');
+  },
+
+  // --- UPLOAD (Arquivos Grandes) ---
+  uploadFile: async (file: File): Promise<string> => {
+    // Limite aumentado para 600MB conforme solicitado
+    const maxSize = 600 * 1024 * 1024; // 600MB
+    if (file.size > maxSize) {
+        alert("O arquivo excede o limite máximo de 600MB.");
+        return "";
+    }
+    return URL.createObjectURL(file);
+  },
+
+  // Alias para manter compatibilidade com código antigo
+  uploadImage: async (file: File): Promise<string> => {
+      return SimbaCloud.uploadFile(file);
+  },
+
+  // --- COURSES (NEW) ---
+  saveCourse: async (course: Course): Promise<Course> => {
+      if (!CURRENT_USER_ID) throw new Error("Usuário não autenticado");
+      const courseToSave = { ...course };
+      (courseToSave as any).ownerId = CURRENT_USER_ID;
+      
+      try {
+          await dbOp('courses', 'readwrite', (store) => store.put(courseToSave));
+          return courseToSave;
+      } catch (e) {
+          console.error("Erro ao salvar curso", e);
+          throw e;
       }
-    };
+  },
 
-    const index = products.findIndex(p => p.id === product.id);
-    if (index >= 0) {
-      products[index] = updatedProduct;
-    } else {
-      products.push(updatedProduct);
+  getCourses: async (): Promise<Course[]> => {
+      if (!CURRENT_USER_ID) return [];
+      try {
+          const all = (await dbOp('courses', 'readonly', (store) => store.getAll())) as Course[];
+          return all.filter((c: any) => c.ownerId === CURRENT_USER_ID);
+      } catch (e) { return []; }
+  },
+
+  deleteCourse: async (id: string): Promise<void> => {
+      try {
+          await dbOp('courses', 'readwrite', (store) => store.delete(id));
+      } catch (e) { console.error(e); }
+  },
+
+  // --- PRODUTOS (DATABASE) ---
+  saveProduct: async (product: Product): Promise<Product> => {
+    if (!CURRENT_USER_ID) throw new Error("Usuário não autenticado");
+
+    await new Promise(r => setTimeout(r, 600));
+    
+    const productToSave = { ...product };
+    // Tag with Owner - CRITICAL FOR ISOLATION
+    (productToSave as any).ownerId = CURRENT_USER_ID;
+
+    // 1. Processar Imagem do Produto
+    if (product.imageUrl && product.imageUrl.startsWith('blob:')) {
+        try {
+            const resp = await fetch(product.imageUrl);
+            const blob = await resp.blob();
+            productToSave.imageBlob = blob; 
+        } catch (e) { console.error(e); }
     }
 
-    localStorage.setItem(DB_KEY_PRODUCTS, JSON.stringify(products));
-    return updatedProduct;
+    // 3. Processar Arquivo do Produto
+    if (product.productFile && product.productFile.startsWith('blob:')) {
+         try {
+            const resp = await fetch(product.productFile);
+            const blob = await resp.blob();
+            productToSave.fileBlob = blob;
+        } catch (e) { console.error(e); }
+    }
+
+    // 4. Processar Vídeos de Aulas (Deep Check)
+    if (product.courseModules) {
+        for (const module of product.courseModules) {
+            for (const lesson of module.lessons) {
+                if (lesson.videoSource === 'local' && lesson.videoBlobUrl && lesson.videoBlobUrl.startsWith('blob:')) {
+                    // Blob handling logic
+                }
+            }
+        }
+    }
+
+    const checkoutId = productToSave.id || Math.random().toString(36).substring(7);
+    productToSave.id = productToSave.id || Date.now().toString();
+    productToSave.dateCreated = productToSave.dateCreated || new Date().toISOString();
+    
+    if (!productToSave.links?.checkout) {
+        productToSave.links = {
+            checkout: `https://simba.app/pay/${checkoutId}`,
+            salesPage: productToSave.salesPageUrl || `https://simba.app/p/${checkoutId}`
+        };
+    }
+
+    try {
+        await dbOp('products', 'readwrite', (store) => store.put(productToSave));
+        return productToSave;
+    } catch (e) {
+        console.error("Erro ao salvar no IndexedDB", e);
+        throw e;
+    }
   },
 
   getProducts: async (): Promise<Product[]> => {
-    const data = localStorage.getItem(DB_KEY_PRODUCTS);
-    return data ? JSON.parse(data) : [];
+    if (!CURRENT_USER_ID) return [];
+    try {
+        const allProducts = (await dbOp('products', 'readonly', (store) => store.getAll())) as Product[];
+        
+        // Filter by Current User - ISOLATION
+        const userProducts = allProducts.filter((p: any) => p.ownerId === CURRENT_USER_ID);
+
+        return userProducts.map(p => {
+            if (p.imageBlob && p.imageBlob instanceof Blob) {
+                p.imageUrl = URL.createObjectURL(p.imageBlob);
+            }
+            if (p.fileBlob && p.fileBlob instanceof Blob) {
+                p.productFile = URL.createObjectURL(p.fileBlob);
+            }
+            return p;
+        });
+    } catch (e) {
+        return [];
+    }
+  },
+
+  deleteProduct: async (id: string): Promise<void> => {
+    try {
+        await dbOp('products', 'readwrite', (store) => store.delete(id));
+    } catch (e) { console.error(e); }
   },
 
   // --- WEBHOOKS ---
   saveWebhook: async (webhook: WebhookConfig): Promise<WebhookConfig> => {
-    await new Promise(r => setTimeout(r, 500));
-    const existing = localStorage.getItem(DB_KEY_WEBHOOKS);
-    const list: WebhookConfig[] = existing ? JSON.parse(existing) : [];
-    const newList = [webhook, ...list];
-    localStorage.setItem(DB_KEY_WEBHOOKS, JSON.stringify(newList));
+    (webhook as any).ownerId = CURRENT_USER_ID;
+    await dbOp('webhooks', 'readwrite', (store) => store.put(webhook));
     return webhook;
   },
 
   getWebhooks: async (): Promise<WebhookConfig[]> => {
-    const data = localStorage.getItem(DB_KEY_WEBHOOKS);
-    return data ? JSON.parse(data) : [];
+    if (!CURRENT_USER_ID) return [];
+    try {
+        const all = (await dbOp('webhooks', 'readonly', (store) => store.getAll())) as WebhookConfig[];
+        return all.filter((w: any) => w.ownerId === CURRENT_USER_ID);
+    } catch (e) { return []; }
   },
 
   // --- API KEYS ---
   saveApiKey: async (key: ApiKeyConfig): Promise<ApiKeyConfig> => {
-    await new Promise(r => setTimeout(r, 500));
-    const existing = localStorage.getItem(DB_KEY_API_KEYS);
-    const list: ApiKeyConfig[] = existing ? JSON.parse(existing) : [];
-    const newList = [key, ...list];
-    localStorage.setItem(DB_KEY_API_KEYS, JSON.stringify(newList));
+    (key as any).ownerId = CURRENT_USER_ID;
+    await dbOp('api_keys', 'readwrite', (store) => store.put(key));
     return key;
   },
 
   getApiKeys: async (): Promise<ApiKeyConfig[]> => {
-    const data = localStorage.getItem(DB_KEY_API_KEYS);
-    return data ? JSON.parse(data) : [];
+    if (!CURRENT_USER_ID) return [];
+    try {
+        const all = (await dbOp('api_keys', 'readonly', (store) => store.getAll())) as ApiKeyConfig[];
+        return all.filter((k: any) => k.ownerId === CURRENT_USER_ID);
+    } catch (e) { return []; }
   },
 
-  // --- APP INTEGRATIONS ---
+  // --- INTEGRAÇÕES ---
   saveIntegration: async (appId: string, config: any): Promise<void> => {
-     await new Promise(r => setTimeout(r, 600));
-     const existing = localStorage.getItem(DB_KEY_INTEGRATIONS);
-     const data = existing ? JSON.parse(existing) : {};
-     data[appId] = { status: 'connected', config };
-     localStorage.setItem(DB_KEY_INTEGRATIONS, JSON.stringify(data));
+     // Composite key for integration: UserID_AppID
+     await dbOp('integrations', 'readwrite', (store) => store.put({ status: 'connected', config }, `${CURRENT_USER_ID}_${appId}`));
   },
 
   getIntegrationsStatus: async (): Promise<Record<string, any>> => {
-      const data = localStorage.getItem(DB_KEY_INTEGRATIONS);
-      return data ? JSON.parse(data) : {};
+      if (!CURRENT_USER_ID) return {};
+      try {
+        const db = await openDB();
+        return new Promise((resolve) => {
+            const transaction = db.transaction('integrations', 'readonly');
+            const store = transaction.objectStore('integrations');
+            const request = store.openCursor();
+            const results: Record<string, any> = {};
+            const prefix = `${CURRENT_USER_ID}_`;
+
+            request.onsuccess = (event: any) => {
+                const cursor = event.target.result;
+                if (cursor) {
+                    if (cursor.key.toString().startsWith(prefix)) {
+                        const originalAppId = cursor.key.toString().replace(prefix, '');
+                        results[originalAppId] = cursor.value;
+                    }
+                    cursor.continue();
+                } else {
+                    resolve(results);
+                }
+            };
+            request.onerror = () => resolve({});
+        });
+      } catch (e) { return {}; }
   }
 };

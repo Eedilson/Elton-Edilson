@@ -1,6 +1,7 @@
+
 export interface Offer {
   id: string;
-  name: string;
+  name: string; // Nome interno (ex: Preço Black Friday)
   price: number;
   isDefault: boolean;
 }
@@ -10,6 +11,88 @@ export interface Coproducer {
   percentage: number;
   status: 'pending' | 'confirmed';
   invitedAt: string;
+}
+
+// Novos Tipos
+export interface PixelConfig {
+  facebook?: { pixelId: string; apiToken?: string; domain?: string; };
+  googleAds?: { conversionId: string; conversionLabel: string; };
+  tiktok?: { pixelId: string; };
+  ga4?: { measurementId: string; };
+}
+
+export interface OrderBump {
+  id: string;
+  productId: string; // Produto vinculado
+  title: string;
+  price: number; // Preço da oferta no bump
+  imageUrl?: string;
+  description?: string;
+  isEnabled: boolean;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  percentage: number;
+  isActive: boolean;
+}
+
+export interface FunnelConfig {
+  upsellProductId?: string; // Produto que será vendido no upsell
+  upsellPageUrl?: string; // URL da página de vendas do Upsell (Redirecionamento)
+  upsellPrice?: number; 
+  
+  downsellProductId?: string; // Produto do downsell
+  downsellPageUrl?: string; // URL da página de downsell
+  downsellPrice?: number;
+}
+
+// --- CURSO ONLINE / ÁREA DE MEMBROS ---
+export interface SupportMaterial {
+  id: string;
+  title: string;
+  type: 'pdf' | 'image' | 'link' | 'archive';
+  url: string;
+}
+
+export interface CourseLesson {
+  id: string;
+  title: string;
+  description?: string;
+  coverImage?: string; // Capa da Aula (Thumbnail)
+  videoUrl?: string; // YouTube/Vimeo/PandaVideo
+  videoSource?: 'external' | 'local'; 
+  videoBlobUrl?: string; // URL local para preview
+  duration?: number; // minutos
+  materials?: SupportMaterial[];
+  allowComments: boolean;
+  isPublished: boolean;
+}
+
+export interface CourseModule {
+  id: string;
+  title: string;
+  coverImage?: string; // Capa do Módulo
+  lessons: CourseLesson[];
+  releaseDate?: string; // Data para liberar o módulo (Bloqueio)
+}
+
+// Entidade de Curso Independente
+export interface Course {
+  id: string;
+  title: string;
+  description?: string;
+  coverImage?: string; // Banner do Curso
+  modules: CourseModule[];
+  
+  // Welcome Video Config
+  welcomeVideoUrl?: string;
+  welcomeVideoSource?: 'external' | 'local';
+  welcomeVideoBlobUrl?: string;
+
+  createdAt: string;
+  ownerId?: string; // Para isolamento de dados
 }
 
 export interface Product {
@@ -37,15 +120,30 @@ export interface Product {
   temperature?: number;
   commissionPercentage?: number;
   isAffiliationEnabled?: boolean;
+  affiliateMaterialLink?: string; // Link para drive/mega com criativos
   tags?: string[];
   deliveryMessage?: string;
   downloadUrl?: string;
 
-  // Advanced Configuration (Cakto Style)
+  // Advanced Configuration (Cakto/Kiwify Style)
   category?: string;
   paymentType?: 'unique' | 'subscription';
   salesPageUrl?: string; // Link to Instagram or Sales Page
   
+  // New Modules
+  pixels?: PixelConfig;
+  orderBumps?: OrderBump[];
+  coupons?: Coupon[];
+  couponsEnabled?: boolean; // Master toggle
+  funnel?: FunnelConfig; // Upsell e Downsell pós-compra
+  
+  // Course Specific
+  linkedCourseId?: string; // Conecta o produto a um Curso criado na Área de Membros
+  
+  // Legacy (Keep for backward compatibility during migration)
+  courseModules?: CourseModule[];
+  welcomeVideoUrl?: string;
+
   // Checkout Customization
   checkoutConfig?: {
     components: string[]; // e.g., ['header', 'guarantee_seal', 'timer']
@@ -55,7 +153,11 @@ export interface Product {
     
     // Specific Assets for Checkout (requested by user)
     checkoutCoverImage?: string; // Separate from product image
-    checkoutVideoUrl?: string;   // Separate from product video
+    
+    // Checkout Video Config
+    checkoutVideoUrl?: string;   
+    checkoutVideoSource?: 'external' | 'local';
+    checkoutVideoBlobUrl?: string;
     
     // Timer Settings
     timerSettings?: {
@@ -73,6 +175,10 @@ export interface Product {
     salesPage: string;
     [key: string]: string; // Allow dynamic keys for offers
   };
+
+  // Internal storage for Large Files (IndexedDB support)
+  imageBlob?: any; // Stores the raw Image Blob
+  fileBlob?: any;  // Stores the raw Product File Blob (PDF/ZIP)
 }
 
 export interface SalesData {
@@ -94,7 +200,8 @@ export enum ViewState {
   COUPONS = 'COUPONS',
   CREATE_PRODUCT = 'CREATE_PRODUCT',
   CHECKOUT_PREVIEW = 'CHECKOUT_PREVIEW',
-  CHECKOUT_EDITOR = 'CHECKOUT_EDITOR' // New Full Screen Editor
+  CHECKOUT_EDITOR = 'CHECKOUT_EDITOR',
+  MEMBERS_AREA = 'MEMBERS_AREA' // Nova View
 }
 
 // INTEGRATIONS TYPES

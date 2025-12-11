@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { Menu, Search, Bell, Moon } from 'lucide-react';
+import { Menu, Search, Bell, Moon, LogIn, Lock, Mail, UserPlus, LogOut } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import ProductList from './components/ProductList';
@@ -11,54 +12,14 @@ import Checkout from './components/Checkout';
 import CheckoutEditor from './components/CheckoutEditor';
 import Finance from './components/Finance';
 import MySales from './components/MySales';
+import MembersArea from './components/MembersArea';
 import { ViewState, Product } from './types';
 import { SimbaCloud } from './services/cloudService';
 
-// Initial Seed Data (Simulating Cloud DB)
-const SEED_PRODUCTS: Product[] = [
-  {
-    id: '1',
-    name: 'Destravando o Iceberg',
-    description: 'Aprenda a criar conteúdo sem aparecer. O guia definitivo para creators tímidos.',
-    price: 1500,
-    format: 'PDF',
-    productType: 'ebook',
-    offers: [{id: '1', name: 'Oferta Padrão', price: 1500, isDefault: true}],
-    coproducers: [],
-    salesCount: 124,
-    revenue: 186000,
-    status: 'active',
-    dateCreated: '2023-10-15',
-    imageUrl: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop',
-    temperature: 150,
-    commissionPercentage: 0.15,
-    isAffiliationEnabled: true,
-    tags: ['Order bump', 'Página do afiliado'],
-    links: { checkout: 'https://simba.app/pay/iceberg', salesPage: 'https://instagram.com/iceberg' }
-  },
-  {
-    id: '2',
-    name: 'Código da Reconquista',
-    description: 'O método comprovado para recuperar relacionamentos em 30 dias.',
-    price: 800,
-    format: 'EPUB',
-    productType: 'ebook',
-    offers: [{id: '1', name: 'Oferta Padrão', price: 800, isDefault: true}],
-    coproducers: [],
-    salesCount: 85,
-    revenue: 68000,
-    status: 'active',
-    dateCreated: '2023-11-02',
-    imageUrl: 'https://images.unsplash.com/photo-1518644730709-083971e9725a?q=80&w=1000&auto=format&fit=crop',
-    temperature: 120,
-    commissionPercentage: 0.30,
-    isAffiliationEnabled: true,
-    tags: ['Upsell', 'Copy Validada'],
-    links: { checkout: 'https://simba.app/pay/reconquista', salesPage: '' }
-  }
-];
-
 const App: React.FC = () => {
+  const [user, setUser] = useState<string | null>(null); // Logged User Email
+  const [loading, setLoading] = useState(true);
+
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
   const [products, setProducts] = useState<Product[]>([]);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -69,41 +30,56 @@ const App: React.FC = () => {
   const [productToEditCheckout, setProductToEditCheckout] = useState<Product | null>(null);
   const [productToEdit, setProductToEdit] = useState<Product | null>(null);
 
+  // Check for existing session
+  useEffect(() => {
+      const storedUser = SimbaCloud.getCurrentUserId();
+      if (storedUser) {
+          setUser(storedUser);
+      }
+      setLoading(false);
+  }, []);
+
   // Helper to load products
   const loadProducts = async () => {
+      if (!user) return;
+      // Load products specific to the CURRENT_USER_ID set in cloudService
       const loaded = await SimbaCloud.getProducts();
       setProducts(loaded);
   };
 
-  // Initialize Cloud Data
-  useEffect(() => {
-    const init = async () => {
-       // Seed if empty
-       const existing = await SimbaCloud.getProducts();
-       if (existing.length === 0) {
-         for (const p of SEED_PRODUCTS) {
-            await SimbaCloud.saveProduct(p);
-         }
-       }
-       await loadProducts();
-    };
-    init();
-  }, []);
-
-  // Reload products whenever the view changes to PRODUCTS.
-  useEffect(() => {
-      if (currentView === ViewState.PRODUCTS) {
-          loadProducts();
-      }
-  }, [currentView]);
-
-  const handleProductCreated = (newProduct: Product) => {
-    setProducts(prev => [newProduct, ...prev.filter(p => p.id !== newProduct.id)]);
-    setCurrentView(ViewState.PRODUCTS);
-    setProductToEdit(null); // Clear edit state
+  // Auth Handler
+  const handleLogin = (email: string) => {
+      setLoading(true);
+      setTimeout(() => {
+          SimbaCloud.setUserId(email); // IMPORTANT: This segregates the data
+          setUser(email);
+          setLoading(false);
+          loadProducts(); // Load fresh data for this user
+          setCurrentView(ViewState.DASHBOARD);
+      }, 800);
   };
 
-  const handleProductUpdated = (updatedProduct: Product) => {
+  const handleLogout = () => {
+      SimbaCloud.logout();
+      setUser(null);
+      setProducts([]); // Clear local state immediately
+      setProductToEdit(null);
+      setProductToEditCheckout(null);
+  };
+
+  // Reload when switching views if necessary
+  useEffect(() => {
+    if (user) loadProducts();
+  }, [currentView, user]);
+
+  const handleProductCreated = async (newProduct: Product) => {
+    await loadProducts();
+    setProductToEdit(null);
+    setCurrentView(ViewState.PRODUCTS);
+  };
+
+  const handleProductUpdated = async (updatedProduct: Product) => {
+    await loadProducts();
     setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
   };
 
@@ -150,9 +126,12 @@ const App: React.FC = () => {
         return <MySales />;
       case ViewState.FINANCE:
         return <Finance />;
+      case ViewState.MEMBERS_AREA:
+        return <MembersArea products={products} />;
       case ViewState.CREATE_PRODUCT:
         return (
           <CreateProduct 
+            existingProducts={products}
             productToEdit={productToEdit}
             onProductCreated={handleProductCreated} 
             onCancel={() => { setProductToEdit(null); setCurrentView(ViewState.PRODUCTS); }} 
@@ -180,7 +159,13 @@ const App: React.FC = () => {
     }
   };
 
-  // If in full screen editor mode, don't show sidebar/header
+  // --- LOGIN SCREEN ---
+  if (!user) {
+      if (loading) return <div className="min-h-screen bg-[#0f1419] flex items-center justify-center text-white">Carregando Simba...</div>;
+      return <LoginScreen onLogin={handleLogin} loading={loading} />;
+  }
+
+  // --- MAIN APP ---
   if (currentView === ViewState.CHECKOUT_EDITOR) {
       return (
         <div className="min-h-screen bg-[#161b22] text-gray-100 font-sans">
@@ -235,13 +220,24 @@ const App: React.FC = () => {
                     </button>
                 </div>
 
-                <div className="relative">
-                    <Bell className="w-5 h-5 text-gray-400 hover:text-white cursor-pointer" />
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center text-white font-bold">4</span>
-                </div>
-
-                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-blue-500 border border-gray-700 cursor-pointer overflow-hidden">
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="User" />
+                <div className="relative group">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-500 to-blue-500 border border-gray-700 cursor-pointer overflow-hidden flex items-center justify-center text-xs font-bold text-white">
+                        {user.substring(0, 2).toUpperCase()}
+                    </div>
+                    
+                    {/* Logout Dropdown */}
+                    <div className="absolute right-0 mt-2 w-48 bg-[#1e2329] border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                        <div className="p-3 border-b border-gray-700">
+                            <p className="text-xs text-gray-400">Logado como</p>
+                            <p className="text-sm font-bold text-white truncate">{user}</p>
+                        </div>
+                        <button 
+                            onClick={handleLogout}
+                            className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-800 flex items-center gap-2"
+                        >
+                            <LogOut className="w-4 h-4" /> Sair
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>
@@ -255,6 +251,7 @@ const App: React.FC = () => {
         {checkoutProduct && (
             <Checkout 
                 product={checkoutProduct} 
+                allProducts={products}
                 onClose={() => setCheckoutProduct(null)} 
             />
         )}
@@ -262,6 +259,94 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+};
+
+const LoginScreen = ({ onLogin, loading }: { onLogin: (email: string) => void, loading: boolean }) => {
+    const [email, setEmail] = useState('');
+    const [mode, setMode] = useState<'login' | 'register'>('login');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if(email) onLogin(email);
+    };
+
+    return (
+        <div className="min-h-screen bg-[#0f1419] flex items-center justify-center p-4">
+            <div className="bg-[#161b22] border border-gray-800 rounded-2xl w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+                <div className="flex justify-center mb-8">
+                    <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-900/50">
+                        <span className="text-white font-black text-3xl">S</span>
+                    </div>
+                </div>
+                <h2 className="text-2xl font-bold text-white text-center mb-2">
+                    {mode === 'login' ? 'Bem-vindo de volta' : 'Crie sua conta no SIMBA'}
+                </h2>
+                <p className="text-gray-400 text-center mb-8 text-sm">
+                    {mode === 'login' ? 'Acesse seus produtos digitais.' : 'Comece a vender em Moçambique hoje.'}
+                </p>
+
+                {/* Toggle Mode */}
+                <div className="flex bg-[#0f1419] p-1 rounded-lg mb-6 border border-gray-800">
+                    <button 
+                        onClick={() => setMode('login')}
+                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${mode === 'login' ? 'bg-[#1e2329] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                        Entrar
+                    </button>
+                    <button 
+                        onClick={() => setMode('register')}
+                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${mode === 'register' ? 'bg-[#1e2329] text-white shadow' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                        Criar Conta
+                    </button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Seu E-mail</label>
+                        <div className="relative">
+                            <input 
+                                type="email" 
+                                required
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                                placeholder="exemplo@email.com"
+                                className="w-full bg-[#0f1419] border border-gray-700 rounded-xl p-4 pl-12 text-white outline-none focus:border-emerald-500 transition-colors"
+                            />
+                            <Mail className="absolute left-4 top-4 w-5 h-5 text-gray-500" />
+                        </div>
+                    </div>
+                     <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Senha</label>
+                        <div className="relative">
+                            <input 
+                                type="password" 
+                                placeholder="••••••••"
+                                className="w-full bg-[#0f1419] border border-gray-700 rounded-xl p-4 pl-12 text-white outline-none focus:border-emerald-500 transition-colors"
+                            />
+                            <Lock className="absolute left-4 top-4 w-5 h-5 text-gray-500" />
+                        </div>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        disabled={loading}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                    >
+                        {loading 
+                            ? 'Processando...' 
+                            : (mode === 'login' ? <><LogIn className="w-5 h-5" /> Acessar Painel</> : <><UserPlus className="w-5 h-5" /> Criar Conta Grátis</>)
+                        }
+                    </button>
+                    
+                    <p className="text-xs text-gray-500 text-center mt-4">
+                        Ao continuar, você concorda com os Termos de Uso. <br/>
+                        Seus dados são privados e isolados nesta conta.
+                    </p>
+                </form>
+            </div>
+        </div>
+    );
 };
 
 export default App;

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ViewState } from '../types';
 import { 
@@ -12,7 +13,8 @@ import {
   ShieldCheck,
   Ticket, 
   HelpCircle,
-  Filter
+  Filter,
+  GraduationCap
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -27,14 +29,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, setView, isMobileOpen, s
   const navItems = [
     { id: ViewState.DASHBOARD, label: 'Dashboard', icon: LayoutDashboard },
     { id: ViewState.PRODUCTS, label: 'Produtos', icon: Package },
+    { id: ViewState.MEMBERS_AREA, label: 'Área de Membros', icon: GraduationCap }, // Added
     { id: ViewState.VITRINE, label: 'Vitrine', icon: Store, badge: 'Novo' },
     { id: ViewState.SALES, label: 'Minhas Vendas', icon: ShoppingCart },
-    { id: ViewState.SUBSCRIPTIONS, label: 'Assinaturas', icon: CreditCard },
-    { id: ViewState.REPORTS, label: 'Relatórios', icon: BarChart2 },
+    // Removido: Assinaturas, Relatórios
     { id: ViewState.AFFILIATES, label: 'Afiliados', icon: Users },
     { id: ViewState.FINANCE, label: 'Financeiro', icon: Banknote },
     { id: ViewState.INTEGRATIONS, label: 'Integrações', icon: ShieldCheck },
-    { id: ViewState.COUPONS, label: 'Cupons', icon: Ticket },
+    // Removido: Cupons
   ];
 
   const bottomItems = [

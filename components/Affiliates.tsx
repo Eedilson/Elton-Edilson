@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
 import { Product } from '../types';
 import { 
   Copy, ExternalLink, DollarSign, Users, MousePointer, 
-  Search, Filter, MoreHorizontal, Check, X, SlidersHorizontal, UserCheck
+  Search, Filter, MoreHorizontal, Check, X, SlidersHorizontal, UserCheck, MessageSquare
 } from 'lucide-react';
 
 interface AffiliatesProps {
@@ -12,11 +13,11 @@ interface AffiliatesProps {
 
 // Mock Data for "My Affiliates" (People affiliated to MY products)
 const MOCK_MY_AFFILIATES = [
-  { id: 1, date: '12/12/2025', name: 'João Silva', email: 'joao.silva@gmail.com', product: 'Destravando o Iceberg', commission: '150.00 MT', status: 'active' },
-  { id: 2, date: '11/12/2025', name: 'Maria Santos', email: 'maria.s@hotmail.com', product: 'Código da Reconquista', commission: '240.00 MT', status: 'pending' },
-  { id: 3, date: '10/12/2025', name: 'Pedro Muxanga', email: 'pedro.mux@outlook.com', product: 'Destravando o Iceberg', commission: '150.00 MT', status: 'active' },
-  { id: 4, date: '05/12/2025', name: 'Ana Costa', email: 'ana.costa@gmail.com', product: 'Mentoria 10x', commission: '500.00 MT', status: 'rejected' },
-  { id: 5, date: '01/12/2025', name: 'Lucas Tamele', email: 'lucas.t@yahoo.com', product: 'Código da Reconquista', commission: '240.00 MT', status: 'active' },
+  { id: 1, date: '12/12/2025', name: 'João Silva', email: 'joao.silva@gmail.com', phone: '258841234567', product: 'Destravando o Iceberg', commission: '150.00 MT', status: 'active' },
+  { id: 2, date: '11/12/2025', name: 'Maria Santos', email: 'maria.s@hotmail.com', phone: '258841234567', product: 'Código da Reconquista', commission: '240.00 MT', status: 'pending' },
+  { id: 3, date: '10/12/2025', name: 'Pedro Muxanga', email: 'pedro.mux@outlook.com', phone: '258841234567', product: 'Destravando o Iceberg', commission: '150.00 MT', status: 'active' },
+  { id: 4, date: '05/12/2025', name: 'Ana Costa', email: 'ana.costa@gmail.com', phone: '258841234567', product: 'Mentoria 10x', commission: '500.00 MT', status: 'rejected' },
+  { id: 5, date: '01/12/2025', name: 'Lucas Tamele', email: 'lucas.t@yahoo.com', phone: '258841234567', product: 'Código da Reconquista', commission: '240.00 MT', status: 'active' },
 ];
 
 type AffiliateViewMode = 'producer' | 'affiliate';
@@ -42,6 +43,13 @@ const Affiliates: React.FC<AffiliatesProps> = ({ affiliatedProducts, onGoToVitri
   };
 
   const filteredAffiliates = getFilteredAffiliates();
+
+  const handleSendMessage = (phone: string, email: string) => {
+      // Simulate sending a message or opening whatsapp
+      const msg = `Olá, aqui é do suporte da SIMBA. Vi que você é afiliado do nosso produto.`;
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+      window.open(url, '_blank');
+  };
 
   // --- RENDER: PRODUCER VIEW (Meus Afiliados) ---
   const renderProducerView = () => (
@@ -138,8 +146,12 @@ const Affiliates: React.FC<AffiliatesProps> = ({ affiliatedProducts, onGoToVitri
                                </span>
                             </td>
                             <td className="px-6 py-4 text-right">
-                               <button className="text-gray-500 hover:text-white p-1">
-                                  <MoreHorizontal className="w-4 h-4" />
+                               <button 
+                                onClick={() => handleSendMessage(aff.phone, aff.email)}
+                                className="text-gray-500 hover:text-emerald-500 p-2 rounded-lg hover:bg-emerald-500/10 transition-colors"
+                                title="Enviar Mensagem (WhatsApp)"
+                               >
+                                  <MessageSquare className="w-4 h-4" />
                                </button>
                             </td>
                          </tr>
@@ -221,6 +233,11 @@ const Affiliates: React.FC<AffiliatesProps> = ({ affiliatedProducts, onGoToVitri
               <div className="flex-1">
                 <h4 className="text-white font-bold">{product.name}</h4>
                 <p className="text-gray-500 text-sm">Comissão: <span className="text-emerald-500 font-bold">{(product.price * (product.commissionPercentage || 0.1)).toLocaleString('pt-MZ')} MT</span> por venda</p>
+                {product.affiliateMaterialLink && (
+                    <a href={product.affiliateMaterialLink} target="_blank" className="text-xs text-blue-400 hover:underline mt-1 block flex items-center gap-1">
+                        <ExternalLink className="w-3 h-3" /> Material de Divulgação
+                    </a>
+                )}
               </div>
 
               <div className="w-full md:w-auto flex flex-col gap-2">
